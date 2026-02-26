@@ -1,0 +1,7 @@
+cargo add image nalgebra
+cargo add scrap wgpu winit
+cargo add tokio --features full
+cargo remove scrap
+cargo add scap
+cargo build
+cargo add log env_logger
