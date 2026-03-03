@@ -4,12 +4,12 @@ use winit::{
     application::ApplicationHandler,
     event::*,
     window::{Window, WindowId},
-    dpi::PhysicalSize,
+    dpi::{PhysicalSize,LogicalSize},
     event_loop::{ActiveEventLoop},
+    monitor::MonitorHandle,
 };
 
-use crate::wgpu_app::WgpuApp;
-
+use crate::{screen, wgpu_app::WgpuApp};
 
 #[derive(Default)]
 pub struct WgpuAppHandler {
@@ -25,12 +25,27 @@ impl ApplicationHandler for WgpuAppHandler {
             return;
         }
 
-        let window_attributes = Window::default_attributes().with_title("tutorial1-window");
+        // let monitor = ActiveEventLoop::primary_monitor(event_loop).unwrap();
+        // let scale_factor = monitor.scale_factor();
+        // let size: LogicalSize<f64> = monitor.size().to_logical(scale_factor);
+        let size  = screen::get_frame_size().unwrap();
+
+        print!("size: {:?}\n", size);
+
+        let window_attributes = 
+            Window::default_attributes()
+            .with_title("Glissando")
+            .with_min_inner_size(size).with_max_inner_size(size) // genius idea!
+            .with_inner_size(size).with_resizable(false);
         let window = Arc::new(event_loop.create_window(window_attributes).unwrap());
 
-        let wgpu_app = pollster::block_on(WgpuApp::new(window));
+        let wgpu_app = pollster::block_on(WgpuApp::new(window.clone()));
         let mut app = self.app.lock().unwrap();
         *app = Some(wgpu_app);
+        window.request_redraw();
+
+
+        // screen::screen_shot().unwrap();
         // self.app.lock().unwrap().replace(wgpu_app);
     }
 
@@ -51,22 +66,23 @@ impl ApplicationHandler for WgpuAppHandler {
             WindowEvent::CloseRequested => {
                 event_loop.exit();
             }
-            WindowEvent::Resized(physical_size) => {
-                // 窗口大小改变
-                if physical_size.width == 0 || physical_size.height == 0 {
-                    // 处理最小化窗口的事件
-                    print!("minimized\n");
-                    todo!();
-                } else {
-                    app.set_window_resized(physical_size);
+            // WindowEvent::Resized(physical_size) => {
+            //     // 窗口大小改变
+            //     if physical_size.width == 0 || physical_size.height == 0 {
+            //         // 处理最小化窗口的事件
+            //         print!("minimized\n");
+            //         todo!();
+            //     } else {
+            //         app.set_window_resized(physical_size);
                     
-                }
-            }
+            //     }
+            // }
             WindowEvent::KeyboardInput { .. } => {
                 // 键盘事件
             }
             WindowEvent::RedrawRequested => {
                 // surface重绘事件
+                // print!("RedrawRequested\n");
                 app.window.pre_present_notify();
 
                 match app.render() {
