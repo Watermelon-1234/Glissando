@@ -1,20 +1,19 @@
 use core::panic;
-use std::{default, sync::Arc, thread::current};
+use std::sync::Arc;
 
-use scap::frame::Frame;
-
-use log::Log;
 use winit::dpi::LogicalSize;
 // use scap::capturer;
 pub use winit::{
     window::Window,
-    dpi::PhysicalSize,
 };
 
 use crate::screen;
 
-use wgpu::util::DeviceExt;
-use bytemuck::{Pod,Zeroable};
+use wgpu::{Adapter, util::DeviceExt};
+use bytemuck;
+
+// configuration
+use crate::config::AppConfig;
 
 // for vr
 #[repr(C)]
@@ -30,7 +29,7 @@ impl Default for VRParams {
     fn default() -> Self {
         Self {
             offset: 0.032,
-            z_distance: 1.2,
+            z_distance: 0.8,
             k1: 0.21,
             k2: 0.12,
         }
@@ -38,13 +37,13 @@ impl Default for VRParams {
 }
 
 pub struct WgpuApp {
+    pub app_config: AppConfig,
+
     surface: wgpu::Surface<'static>,
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     size: winit::dpi::LogicalSize<u32>, // PhysicalSize<u32>,
-    size_changed: bool,
-    color : wgpu::Color,
 
     screen_texture: wgpu::Texture,
     screen_texture_view: wgpu::TextureView,
@@ -65,10 +64,10 @@ pub struct WgpuApp {
 
 
 impl WgpuApp {
-    pub async fn new(window: Arc<Window>) -> Self {
+    pub async fn new(window: Arc<Window>, app_config: AppConfig) -> Self {
 
         // capturer
-        let mut capturer = screen::init_capture().unwrap_or_else(|e| panic!("error: {}", e));
+        let mut capturer = screen::init_capture(Some(app_config.clone())).unwrap_or_else(|e| panic!("error: {}", e));
         // // print!("test_only main() init_capture\n");
         // let frame = scap::frame::Frame::BGRA(
         //     scap::frame::BGRAFrame {
@@ -130,15 +129,32 @@ impl WgpuApp {
 
         let surface = instance.create_surface(window.clone()).unwrap();
 
-        let adapter = instance // temporary
-            .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::default(),
-                compatible_surface: Some(&surface),
-                force_fallback_adapter: false,
-            }
-        )
-        .await
-        .unwrap();
+        let adapter_with_option: Option<Adapter>  = match app_config.system.adapter_name != "" && app_config.system.adapter_name != "None" {
+            true =>  instance
+                .enumerate_adapters(wgpu::Backends::all())
+                .await
+                // .iter().for_each(|adapter| println!("{},{},{},{}",adapter.get_info().name,adapter.get_info().backend,adapter.get_info().device,adapter.get_info().vendor));
+                .into_iter()
+                .filter(|adapter| adapter.is_surface_supported(&surface) && adapter.get_info().name == app_config.system.adapter_name)
+                .collect::<Vec<Adapter>>()
+                .first()
+                .cloned(),
+            false => Some(instance // temporary
+                .request_adapter(&wgpu::RequestAdapterOptions {
+                    power_preference: wgpu::PowerPreference::default(),
+                    compatible_surface: Some(&surface),
+                    force_fallback_adapter: false,
+                }
+            )
+            .await
+            .unwrap()),
+        };
+
+        let adapter = match adapter_with_option {
+            Some(adapter) => adapter,
+            None => panic!("no adapter found"),
+        };
+        
 
         let (device, queue) = adapter.request_device(&wgpu::DeviceDescriptor {
                 required_features: wgpu::Features::empty(),
@@ -162,9 +178,9 @@ impl WgpuApp {
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: caps.formats[0],
-            width: size.width, // temporary
-            height: size.height, // temporary
-            present_mode: wgpu::PresentMode::Fifo, //temporary
+            width: size.width,
+            height: size.height,
+            present_mode: app_config.system.present_mode,// wgpu::PresentMode::Fifo, //temporary
             alpha_mode: caps.alpha_modes[0],
             view_formats: vec![],
             desired_maximum_frame_latency: 2,
@@ -206,7 +222,12 @@ impl WgpuApp {
             ..Default::default()
         });
 
-        let vr_params = VRParams::default();
+        let vr_params = VRParams{
+            offset: app_config.vr_render.offset,
+            z_distance: app_config.vr_render.z_distance,
+            k1: app_config.vr_render.k1,
+            k2: app_config.vr_render.k2,
+        };
 
         // 2. 建立 GPU Buffer
         let vr_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -330,12 +351,12 @@ impl WgpuApp {
         // print!("test_only main() render_pipeline\n");
 
         Self {
+            app_config,
             surface,
             device,
             queue,
             config,
             size,
-            size_changed: false,
             window,
 
             screen_texture,
@@ -346,12 +367,6 @@ impl WgpuApp {
             sampler,
             bind_group,
 
-            color: wgpu::Color {
-                r: 1.0,
-                g: 0.0,
-                b: 0.0,
-                a: 1.0,
-            },
             capturer,
             is_capturing,
             current_frame: frame,
@@ -515,17 +530,8 @@ impl WgpuApp {
     pub fn update(&mut self) {
         
     }
-    pub fn update_vr_params(&mut self, offset_delta: f32, z_delta: f32) {
-        self.vr_params.offset += offset_delta;
-        self.vr_params.z_distance += z_delta;
-        
-        // 限制最小值，避免畫面翻轉或崩潰
-        self.vr_params.z_distance = self.vr_params.z_distance.max(0.1);
-        
-        // 將更新後的數據寫入 GPU Buffer
-        self.queue.write_buffer(&self.vr_buffer, 0, bytemuck::cast_slice(&[self.vr_params]));
-        
-        println!("Current - Offset: {:.3}, Z: {:.3}", self.vr_params.offset, self.vr_params.z_distance);
-    }
+    // pub fn update_params(&mut self, offset_delta: f32, z_delta: f32) {
+    //     todo!();    
+    // }
 }
 

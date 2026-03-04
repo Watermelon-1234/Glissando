@@ -4,18 +4,14 @@ use winit::{
     application::ApplicationHandler,
     event::*,
     window::{Window, WindowId},
-    dpi::{PhysicalSize,LogicalSize},
     event_loop::{ActiveEventLoop},
-    monitor::MonitorHandle,
 };
 
-use crate::{screen, wgpu_app::WgpuApp};
+use crate::{screen, wgpu_app::WgpuApp, config};
 
 #[derive(Default)]
 pub struct WgpuAppHandler {
     app: Arc<Mutex<Option<WgpuApp>>>,
-
-    missed_resize: Arc<Mutex<Option<PhysicalSize<u32>>>>,
 }
 
 impl ApplicationHandler for WgpuAppHandler {
@@ -32,14 +28,18 @@ impl ApplicationHandler for WgpuAppHandler {
 
         print!("size: {:?}\n", size);
 
+        let appconfig = config::load();
+
+        // println!("appconfig: {:#?}\n", appconfig);
+
         let window_attributes = 
             Window::default_attributes()
             .with_title("Glissando")
             .with_min_inner_size(size).with_max_inner_size(size) // genius idea!
-            .with_inner_size(size).with_resizable(false);
+            .with_inner_size(size).with_resizable(false).with_decorations(false);
         let window = Arc::new(event_loop.create_window(window_attributes).unwrap());
 
-        let wgpu_app = pollster::block_on(WgpuApp::new(window.clone()));
+        let wgpu_app = pollster::block_on(WgpuApp::new(window.clone(), appconfig));
         let mut app = self.app.lock().unwrap();
         *app = Some(wgpu_app);
         window.request_redraw();

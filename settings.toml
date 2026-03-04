@@ -1,0 +1,26 @@
+# system arguments
+adapter_name = "None" # need to be set at the initialization
+present_mode = "Fifo" # AutoVsync, AutoNoVsync, Fifo, FifoRelaxed, Immediate,
+
+# window arguments
+
+
+# capture arguments
+display_name = "None" # need to be set at the initialization
+fps = 60
+resolution = "1080p" # _480p,_720p,_1080p,_1440p,_2160p,_4320p,default
+
+# vr render arguments
+use_defalt_vr_params = true
+offset = 0.032      # 瞳距偏移 (IPD)
+z_distance = 1.0    # 螢幕虛擬距離 (越小越近/越大)
+k1 = 0.21           # 桶狀畸變係數 1
+k2 = 0.12           # 桶狀畸變係數 2
+
+# debug
+enable_debug = false
+debug_level = "info"
+log_file_path = "glissando.log"
+
+# key bindings
+key_quit = "q"

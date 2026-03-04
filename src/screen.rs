@@ -1,12 +1,15 @@
-use env_logger::Target;
 use scap::{
-    capturer::{self, Area, Capturer, Options, Point, Size},
-    frame::{self, Frame},
+    capturer::{Capturer, Options},
 };
 
-use anyhow::{Ok, Result};
+use anyhow::{Ok};
 
-pub fn init_capture() -> anyhow::Result<Capturer> {
+use crate::config::{AppConfig, CaptureArgs};
+
+
+pub fn init_capture(app_config: Option<AppConfig>) -> anyhow::Result<Capturer> {
+    let app_config = app_config.unwrap_or(AppConfig { capture: CaptureArgs { fps: 60, ..Default::default()}, ..Default::default() });
+    println!("app_config: {:#?}\n", app_config);
     // print!("test_only init_capture() start\n");
     if !scap::is_supported() 
     {
@@ -24,7 +27,28 @@ pub fn init_capture() -> anyhow::Result<Capturer> {
     }
     // print!("test_only init_capture() scap has permission\n");
     // Get recording targets
+    
+    let mut target:Option<scap::Target> = None; // None captures the primary display>
+
     let targets = scap::get_all_targets();
+
+    if app_config.capture.display_name.len() != 0 // display is set
+    || app_config.capture.display_name != "None" 
+    || app_config.capture.display_name != "" {
+        target = targets.clone()
+            .into_iter()
+            .find(|target| {
+                if let scap::Target::Display(display) = target {
+                    display.title == app_config.capture.display_name
+                } else {
+                    false
+                }
+            }
+        );
+    
+    }
+    
+    
     // println!("Targets: {:?}", targets);
     // print!("test_only init_capture() targets: {:?}\n", targets);
     let excluded_target = targets
@@ -40,13 +64,13 @@ pub fn init_capture() -> anyhow::Result<Capturer> {
     // print!("test_only init_capture() excluded_target: {:?}\n", excluded_target);
     // Create Options
     let options = Options {
-        fps: 60, // temporary
-        target: None, // None captures the primary display // temporary
+        fps: app_config.capture.fps, // temporary
+        target: target, // None captures the primary display // temporary
         show_cursor: true,
         show_highlight: true,
         excluded_targets: excluded_target.map(|t| vec![t]),
         output_type: scap::frame::FrameType::BGRAFrame,
-        output_resolution: scap::capturer::Resolution:: _1080p,// _720p, // temporary
+        output_resolution: app_config.capture.resolution, // _1080p,// temporary
         ..Default::default()
     };
     // print!("test_only init_capture() options: {:?}\n", options);
@@ -64,7 +88,7 @@ pub fn init_capture() -> anyhow::Result<Capturer> {
 // }
 
 pub fn get_frame_size() -> anyhow::Result<winit::dpi::LogicalSize<u32>> {
-    let mut capturer = init_capture().unwrap();
+    let mut capturer = init_capture(None).unwrap();
     let frame_size = capturer.get_output_frame_size(); // [u32,2]
     Ok(winit::dpi::LogicalSize::new(frame_size[0], frame_size[1]))
 }
