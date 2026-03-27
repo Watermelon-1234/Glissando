@@ -10,6 +10,7 @@ pub use winit::{
 use crate::screen;
 
 use wgpu::{Adapter, util::DeviceExt};
+
 use bytemuck;
 
 // configuration
@@ -56,6 +57,13 @@ pub struct WgpuApp {
     is_capturing: bool,
     current_frame: scap::frame::Frame,
     bind_group: wgpu::BindGroup,
+
+    pub yuv_data_size: u64,
+    pub yuv_shader: wgpu::ShaderModule,
+    pub yuv_compute_pipeline: wgpu::ComputePipeline,
+    pub yuv_bind_group: wgpu::BindGroup,
+    pub yuv_output_staging_buffer: wgpu::Buffer,     
+    pub yuv_storage_buffer: wgpu::Buffer,
 
     /// 避免窗口被释放
     #[allow(unused)]
@@ -176,7 +184,7 @@ impl WgpuApp {
         let caps = surface.get_capabilities(&adapter);
         print!("test_only window.inner_size: {:?}\n", size);
         let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT| wgpu::TextureUsages::COPY_SRC,
             format: caps.formats[0],
             width: size.width,
             height: size.height,
@@ -348,7 +356,91 @@ impl WgpuApp {
             cache: None,
         });
 
+        let u32_size = std::mem::size_of::<u32>() as u32;
+        // let bytes_per_row = (size.width * u32_size + 255) & !255; // 對齊 256 bytes
+        let yuv_data_size = (size.width * size.height * 3 / 2) as u64;
+
+        let yuv_storage_buffer = device.create_buffer(
+            &wgpu::BufferDescriptor{
+                label: Some("YUV Storage Buffer"),
+                size: yuv_data_size,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC, // 注意 COPY_SRC
+                mapped_at_creation: false,
+            }
+        );
+
+        let yuv_output_staging_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("YUV Output Staging Buffer"),
+            size: yuv_data_size,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
         // print!("test_only main() render_pipeline\n");
+
+        let yuv_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("YUV Compute Shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("yuv_convert.wgsl").into()), // 這是你寫好的 shader
+        });
+
+        let yuv_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("YUV Bind Group Layout"),
+            entries: &[
+                // Binding 0: 輸入的原始貼圖 (剛畫好的 SBS 畫面)
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                // Binding 1: 輸出的 Storage Buffer (放 YUV 數據)
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+        });
+
+        let yuv_bind_group = device.create_bind_group(
+            &wgpu::BindGroupDescriptor {
+                layout: &yuv_bind_group_layout,
+                label: Some("YUV Bind Group"),
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&screen_texture_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: yuv_storage_buffer.as_entire_binding(),
+                    },
+                ]
+            }
+        );
+
+        let yuv_compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("YUV Compute Pipeline"),
+            layout: Some(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("YUV Layout"),
+                bind_group_layouts: &[&yuv_bind_group_layout],
+                immediate_size: 0,
+            })),
+            module: &yuv_shader,
+            entry_point: Some("main"), // 對應你 wgsl 裡的 @compute fn main
+            compilation_options: Default::default(),
+            cache: None,
+        });
+
 
         Self {
             app_config,
@@ -367,9 +459,18 @@ impl WgpuApp {
             sampler,
             bind_group,
 
+            
+
             capturer,
             is_capturing,
             current_frame: frame,
+
+            yuv_data_size,
+            yuv_storage_buffer,
+            yuv_output_staging_buffer,
+            yuv_shader,
+            yuv_bind_group,
+            yuv_compute_pipeline,
         }
         
     }
@@ -414,34 +515,36 @@ impl WgpuApp {
         }
 
         // print!("test_only render() frame done");
-        if let scap::frame::Frame::BGRA(ref frame) = self.current_frame {
-                    if (frame.width as u32 != self.config.width || frame.height as u32 != self.config.height) && (frame.width != 0 && frame.height != 0)
+        if let scap::frame::Frame::BGRA(ref frame) = self.current_frame 
         {
-            print!("reshape texture and surface to {}x{}\n", frame.width, frame.height);
-            self.config.width = frame.width as u32;
-            self.config.height = frame.height as u32;
-            self.surface.configure(&self.device, &self.config);
+            if (frame.width as u32 != self.config.width || frame.height as u32 != self.config.height) && (frame.width != 0 && frame.height != 0)
+            {
+                print!("reshape texture and surface to {}x{}\n", frame.width, frame.height);
+                self.config.width = frame.width as u32;
+                self.config.height = frame.height as u32;
+                self.surface.configure(&self.device, &self.config);
 
-            self.screen_texture = self.device.create_texture(&wgpu::TextureDescriptor {
-                label: Some("screen texture"),
-                size: wgpu::Extent3d {
-                    width: frame.width as u32,
-                    height: frame.height as u32,
-                    depth_or_array_layers: 1,
-                },
-                format: wgpu::TextureFormat::Bgra8Unorm,
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                usage: wgpu::TextureUsages::COPY_DST
-                    | wgpu::TextureUsages::RENDER_ATTACHMENT
-                    | wgpu::TextureUsages::TEXTURE_BINDING,
-                view_formats: &[],
-            });
+                self.screen_texture = self.device.create_texture(&wgpu::TextureDescriptor {
+                    label: Some("screen texture"),
+                    size: wgpu::Extent3d {
+                        width: frame.width as u32,
+                        height: frame.height as u32,
+                        depth_or_array_layers: 1,
+                    },
+                    format: wgpu::TextureFormat::Bgra8Unorm,
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    usage: wgpu::TextureUsages::COPY_DST
+                        | wgpu::TextureUsages::RENDER_ATTACHMENT
+                        | wgpu::TextureUsages::TEXTURE_BINDING,
+                    view_formats: &[],
+                });
 
-            self.screen_texture_view =
-                self.screen_texture.create_view(&wgpu::TextureViewDescriptor::default());
-        }
+                self.screen_texture_view =
+                    self.screen_texture.create_view(&wgpu::TextureViewDescriptor::default());
+            }
+
             let size = self.size;
             
             let expected_size = (frame.width as usize)
@@ -484,10 +587,6 @@ impl WgpuApp {
                     depth_or_array_layers: 1,
                 },
             );
-
-
-
-            
         }
 
         // print!("test_only render() start render pass\n");
@@ -499,6 +598,8 @@ impl WgpuApp {
             label: Some("Render Encoder"),
         });
 
+
+        // render pass
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
@@ -519,10 +620,64 @@ impl WgpuApp {
             
         }
 
+        // convert pass (BGRA -> YUV) with shader:yuv_convert.wgsl
+        {
+            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("YUV Conversion Pass"),
+                ..Default::default()
+            });
+            compute_pass.set_pipeline(&self.yuv_compute_pipeline); // 你新建立的 pipeline
+            compute_pass.set_bind_group(0, &self.yuv_bind_group, &[]);
+            
+            // 根據畫面大小決定工作群組數量 (假設 8x8)
+            // let workgroup_x = (self.config.width + 7) / 8;
+            // let workgroup_y = (self.config.height + 7) / 8;
+            // compute_pass.dispatch_workgroups(workgroup_x, workgroup_y, 1);
+            // id.y 處理高度的 1.5 倍
+            compute_pass.dispatch_workgroups((self.size.width + 63) / 64, (self.size.height * 3 / 2 + 15) / 16, 1);
+        }
 
-        // submit 命令能接受任何实现了 IntoIter trait 的参数
+        encoder.copy_buffer_to_buffer(
+            &self.yuv_storage_buffer, 0,
+            &self.yuv_output_staging_buffer, 0,
+            self.yuv_data_size
+        );
+
+
+
+
+        // copy pass
+        // let u32_size = std::mem::size_of::<u32>() as u32;
+        // let bytes_per_row = (self.config.width * u32_size + 255) & !255; 
+
+        // let output_buffer_layout = wgpu::TexelCopyBufferLayout {
+        //     offset: 0,
+        //     bytes_per_row: Some(bytes_per_row),
+        //     rows_per_image: Some(self.config.height),
+        // };
+
+        // encoder.copy_texture_to_buffer(
+        //     wgpu::TexelCopyTextureInfo {
+        //         texture: &output.texture, // 直接抓取剛剛渲染完的畫面
+        //         mip_level: 0,
+        //         origin: wgpu::Origin3d::ZERO,
+        //         aspect: wgpu::TextureAspect::All,
+        //     },
+        //     wgpu::TexelCopyBufferInfo{
+        //         buffer: &self.yuv_output_staging_buffer,
+        //         layout: output_buffer_layout,
+        //     },
+        //     wgpu::Extent3d {
+        //         width: self.config.width,
+        //         height: self.config.height,
+        //         depth_or_array_layers: 1,
+        //     },
+        // );
+
         self.queue.submit(Some(encoder.finish()));
         output.present();
+
+        
 
         Ok(())
     }
@@ -533,5 +688,57 @@ impl WgpuApp {
     // pub fn update_params(&mut self, offset_delta: f32, z_delta: f32) {
     //     todo!();    
     // }
+
+    // 這是最詳盡的讀取流程
+    pub async fn frame_from_buffer(&self) -> Option<Vec<u8>> {
+        let u32_size = std::mem::size_of::<u32>() as u32;
+        let bytes_per_row = (self.config.width * u32_size + 255) & !255; 
+
+        // 1. 建立一個 slice 指向 buffer
+        let buffer_slice = self.yuv_output_staging_buffer.slice(..);
+
+        // 2. 請求映射（Map）該緩衝區以便讀取
+        // 使用 Oneshot Channel 來等待非同步結果
+        let (tx, rx) = futures::channel::oneshot::channel();
+        buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
+            tx.send(result).unwrap();
+        });
+
+        // 3. 輪詢設備直到映射完成
+        // 這是最重要的一步，沒有 poll，GPU 就不會執行地圖映射的指令
+        match self.device.poll(wgpu::PollType::Wait { // wgpu::Maintain is renamed to wgpu::PollType in wpug v25.0.0 https://github.com/gfx-rs/wgpu/releases?q=maintain&expanded=true
+            submission_index: None,
+            timeout: None,
+        }) {
+            Ok(_) => {
+                // theorically, this should never fail
+            }
+            Err(e) => {
+                // 處理 GPU 錯誤，例如 Device Lost 或 Timeout
+                eprintln!("GPU Poll Error: {:?}", e);
+                return None;
+            }
+        }
+
+        if let Ok(Ok(_)) = rx.await {
+            // 4. 取得映射後的數據範圍
+            let data = buffer_slice.get_mapped_range();
+            
+            // 5. 處理對齊（Padding）問題
+            // GPU 的 bytes_per_row 往往大於畫面的寬度 * 4，必須剔除多餘的空白
+            let mut result = Vec::with_capacity((self.config.width * self.config.height * 4) as usize);
+            for chunk in data.chunks(bytes_per_row as usize) {
+                result.extend_from_slice(&chunk[.. (self.config.width * 4) as usize]);
+            }
+
+            // 6. 必須手動解除映射，否則下一影格 GPU 無法寫入
+            drop(data);
+            self.yuv_output_staging_buffer.unmap();
+            
+            Some(result) // 這回傳的是 BGRA 格式的原始數據
+        } else {
+            None
+        }
+    }
 }
 
