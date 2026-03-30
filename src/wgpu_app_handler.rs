@@ -92,6 +92,15 @@ impl ApplicationHandler for WgpuAppHandler {
                     // 所有其他错误（过期、超时等）应在下一帧解决
                     Err(e) => eprintln!("{e:?}"),
                 }
+
+                if let Some(yuv_data) = pollster::block_on(app.capture_yuv_frame()) {
+                    // 如果 streamer 已經初始化，就推出去
+                    if let Some(ref streamer) = app.streamer {
+                        // println!("Pushing frame, size: {}", yuv_data.len());
+                        let _ = streamer.push_frame(yuv_data);
+                    }
+                }
+
                 // 除非我们手动请求，RedrawRequested 将只会触发一次。
                 app.update();
                 app.window.request_redraw();

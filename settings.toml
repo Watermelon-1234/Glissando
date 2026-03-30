@@ -8,7 +8,7 @@ present_mode = "Fifo" # AutoVsync, AutoNoVsync, Fifo, FifoRelaxed, Immediate,
 # capture arguments
 display_name = "None" # need to be set at the initialization
 fps = 60
-resolution = "1080p" # _480p,_720p,_1080p,_1440p,_2160p,_4320p,default
+resolution = "_480p" # _480p,_720p,_1080p,_1440p,_2160p,_4320p,default // bug
 
 # vr render arguments
 use_defalt_vr_params = true
@@ -24,3 +24,7 @@ log_file_path = "glissando.log"
 
 # key bindings
 key_quit = "q"
+
+# Network settings
+device_ip = "192.168.0.148"
+video_server_port = 5000

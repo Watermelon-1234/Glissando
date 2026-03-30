@@ -13,6 +13,7 @@ use wgpu_app_handler::WgpuAppHandler;
 mod wgpu_app;
 mod screen;
 mod config;
+mod video;
 
 use env_logger;
 
@@ -28,3 +29,4 @@ fn main()-> Result<(), EventLoopError> {
     let mut app = WgpuAppHandler::default();
     events_loop.run_app(&mut app)
 }
+

@@ -70,7 +70,7 @@ pub fn init_capture(app_config: Option<AppConfig>) -> anyhow::Result<Capturer> {
         show_highlight: true,
         excluded_targets: excluded_target.map(|t| vec![t]),
         output_type: scap::frame::FrameType::BGRAFrame,
-        output_resolution: app_config.capture.resolution, // _1080p,// temporary
+        output_resolution: scap::capturer::Resolution::_1080p,//app_config.capture.resolution, // _1080p,// temporary
         ..Default::default()
     };
     // print!("test_only init_capture() options: {:?}\n", options);

@@ -10,6 +10,7 @@ pub struct AppConfig {
     pub capture: CaptureArgs,
     pub vr_render: VrRenderArgs,
     pub debug: DebugArgs,
+    pub network: NetworkArgs,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -84,6 +85,21 @@ impl Default for DebugArgs {
     }
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct NetworkArgs {
+    pub video_server_port: u16,
+    pub device_ip: String,
+}
+
+impl Default for NetworkArgs {
+    fn default() -> Self {
+        NetworkArgs { 
+            video_server_port: 5000,
+            device_ip: String::from("127.0.0.1"),
+        }
+    }
+}
+
 impl AppConfig {
     pub fn deserialize_resolution<'de, D> (deserializer: D) -> Result<Resolution, D::Error>
         where D: serde::de::Deserializer<'de>
@@ -108,7 +124,7 @@ impl AppConfig {
                     "_2160p" => Ok(Resolution::_2160p),
                     "_4320p" => Ok(Resolution::_4320p),
                     "captured" => Ok(Resolution::Captured),
-                    _ => Ok(Resolution::_720p),
+                    _ => Ok(Resolution::_1080p), // bug
                 }
             }
         }

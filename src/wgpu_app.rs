@@ -16,6 +16,8 @@ use bytemuck;
 // configuration
 use crate::config::AppConfig;
 
+use crate::video::GStreamer;
+
 // for vr
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -58,12 +60,17 @@ pub struct WgpuApp {
     current_frame: scap::frame::Frame,
     bind_group: wgpu::BindGroup,
 
+    pub distorted_texture: wgpu::Texture,
+    pub distorted_texture_view: wgpu::TextureView,
+
     pub yuv_data_size: u64,
     pub yuv_shader: wgpu::ShaderModule,
     pub yuv_compute_pipeline: wgpu::ComputePipeline,
     pub yuv_bind_group: wgpu::BindGroup,
     pub yuv_output_staging_buffer: wgpu::Buffer,     
     pub yuv_storage_buffer: wgpu::Buffer,
+
+    pub streamer: Option<GStreamer>,
 
     /// 避免窗口被释放
     #[allow(unused)]
@@ -184,7 +191,7 @@ impl WgpuApp {
         let caps = surface.get_capabilities(&adapter);
         print!("test_only window.inner_size: {:?}\n", size);
         let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT| wgpu::TextureUsages::COPY_SRC,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT| wgpu::TextureUsages::COPY_SRC| wgpu::TextureUsages::COPY_DST,
             format: caps.formats[0],
             width: size.width,
             height: size.height,
@@ -356,7 +363,26 @@ impl WgpuApp {
             cache: None,
         });
 
-        let u32_size = std::mem::size_of::<u32>() as u32;
+
+        let distorted_texture = device.create_texture(&wgpu::TextureDescriptor{
+            label: Some("distort texture"),
+            size: wgpu::Extent3d {
+                width: size.width,
+                height: size.height,
+                depth_or_array_layers: 1,
+            },
+            format: config.format,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            // 必須具備 RENDER_ATTACHMENT(可被渲染)、TEXTURE_BINDING(可被Shader讀取)、COPY_SRC(可被複製)
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+
+        let distorted_texture_view = distorted_texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        // let u32_size = std::mem::size_of::<u32>() as u32;
         // let bytes_per_row = (size.width * u32_size + 255) & !255; // 對齊 256 bytes
         let yuv_data_size = (size.width * size.height * 3 / 2) as u64;
 
@@ -418,7 +444,7 @@ impl WgpuApp {
                 entries: &[
                     wgpu::BindGroupEntry {
                         binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&screen_texture_view),
+                        resource: wgpu::BindingResource::TextureView(&distorted_texture_view),
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
@@ -441,6 +467,15 @@ impl WgpuApp {
             cache: None,
         });
 
+        let streamer:Option<GStreamer> = match GStreamer::new(&app_config.network.device_ip, app_config.network.video_server_port, size.width, size.height)
+        {
+            Ok(streamer) => Some(streamer),
+            Err(e) => {
+                println!("Failed to create GStreamer: {}", e);
+                None
+            }
+        };
+
 
         Self {
             app_config,
@@ -459,7 +494,8 @@ impl WgpuApp {
             sampler,
             bind_group,
 
-            
+            distorted_texture,
+            distorted_texture_view,
 
             capturer,
             is_capturing,
@@ -471,6 +507,8 @@ impl WgpuApp {
             yuv_shader,
             yuv_bind_group,
             yuv_compute_pipeline,
+
+            streamer,
         }
         
     }
@@ -543,6 +581,41 @@ impl WgpuApp {
 
                 self.screen_texture_view =
                     self.screen_texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+                // --- 新增：視窗大小改變時，重建中介紋理 (Distorted Texture) ---
+                self.distorted_texture = self.device.create_texture(&wgpu::TextureDescriptor {
+                    label: Some("distorted texture"),
+                    size: wgpu::Extent3d {
+                        width: frame.width as u32,
+                        height: frame.height as u32,
+                        depth_or_array_layers: 1,
+                    },
+                    format: self.config.format, 
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                        | wgpu::TextureUsages::TEXTURE_BINDING
+                        | wgpu::TextureUsages::COPY_SRC,
+                    view_formats: &[],
+                });
+                self.distorted_texture_view = self.distorted_texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+                // --- 新增：重建 YUV Bind Group，綁定新的中介紋理 ---
+                self.yuv_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    layout: &self.yuv_compute_pipeline.get_bind_group_layout(0),
+                    label: Some("YUV Bind Group"),
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: wgpu::BindingResource::TextureView(&self.distorted_texture_view),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: self.yuv_storage_buffer.as_entire_binding(),
+                        },
+                    ]
+                });
             }
 
             let size = self.size;
@@ -604,7 +677,7 @@ impl WgpuApp {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
+                    view: &self.distorted_texture_view, //changed
                     resolve_target: None,
                     depth_slice: None,
                     ops: wgpu::Operations {
@@ -644,7 +717,26 @@ impl WgpuApp {
         );
 
 
-
+        // Copy/Blit Pass: 將中介紋理的內容直接複製到視窗 Surface 上，讓肉眼可以看到
+        encoder.copy_texture_to_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &self.distorted_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyTextureInfo {
+                texture: &output.texture, // 目標是視窗
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::Extent3d {
+                width: self.config.width,
+                height: self.config.height,
+                depth_or_array_layers: 1,
+            }
+        );
 
         // copy pass
         // let u32_size = std::mem::size_of::<u32>() as u32;
@@ -683,6 +775,11 @@ impl WgpuApp {
     }
 
     pub fn update(&mut self) {
+        if let Some(yuv_data) = pollster::block_on(self.capture_yuv_frame()) {
+            if let Some(ref streamer) = self.streamer {
+                let _ = streamer.push_frame(yuv_data);
+            }
+        } 
         
     }
     // pub fn update_params(&mut self, offset_delta: f32, z_delta: f32) {
@@ -736,6 +833,50 @@ impl WgpuApp {
             self.yuv_output_staging_buffer.unmap();
             
             Some(result) // 這回傳的是 BGRA 格式的原始數據
+        } else {
+            None
+        }
+    }
+
+    pub async fn capture_yuv_frame(&self) -> Option<Vec<u8>> {
+        // 1. 定義 buffer slice
+        let buffer_slice = self.yuv_output_staging_buffer.slice(..);
+        
+        // 2. 請求映射（Map）該緩衝區以便讀取
+        // 使用 Oneshot Channel 來等待非同步結果
+        let (tx, rx) = futures::channel::oneshot::channel();
+        buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
+            tx.send(result).unwrap();
+        });
+
+        // 3. 輪詢 GPU 執行指令
+        match self.device.poll(wgpu::PollType::Wait { // wgpu::Maintain is renamed to wgpu::PollType in wpug v25.0.0 https://github.com/gfx-rs/wgpu/releases?q=maintain&expanded=true
+            submission_index: None,
+            timeout: None,
+        }) {
+            Ok(_) => {
+                // theorically, this should never fail
+            }
+            Err(e) => {
+                // 處理 GPU 錯誤，例如 Device Lost 或 Timeout
+                eprintln!("GPU Poll Error: {:?}", e);
+                return None;
+            }
+        }
+
+        // 4. 等待映射結果
+        if let Ok(Ok(_)) = rx.await {
+            let data = buffer_slice.get_mapped_range();
+            
+            // 這裡的大小應該剛好是 width * height * 1.5
+            // 因為我們在 WGSL 裡是用 u32 打包的，所以長度會剛好對齊
+            let result = data.to_vec();
+            
+            // 記得釋放映射，否則下一幀 GPU 無法寫入
+            drop(data);
+            self.yuv_output_staging_buffer.unmap();
+            
+            Some(result)
         } else {
             None
         }
