@@ -21,32 +21,56 @@ impl ApplicationHandler for WgpuAppHandler {
             return;
         }
 
+        let appconfig = config::load();
+
         // let monitor = ActiveEventLoop::primary_monitor(event_loop).unwrap();
         // let scale_factor = monitor.scale_factor();
         // let size: LogicalSize<f64> = monitor.size().to_logical(scale_factor);
-        let size  = screen::get_frame_size().unwrap();
 
-        print!("size: {:?}\n", size);
+        let target_monitor = event_loop.available_monitors().find(|m| {
+            println!("monitor name: {}\n monitor scale: {} = {}x{}", m.name().unwrap(), m.scale_factor(), m.size().width,m.size().height);
+            // m.name().map(|n| n.contains(&appconfig.system.display_monitor)).unwrap_or(false)
+            m.size().width == 5120 && m.size().height == 2880
+            // false
+        }).or_else(|| {
+            println!("cannot find monitor");
+            event_loop.primary_monitor()
+        }); // 找不到就用主螢幕
 
-        let appconfig = config::load();
+        if let Some(monitor) = target_monitor {
+            // let size  = screen::get_frame_size().unwrap();
 
-        // println!("appconfig: {:#?}\n", appconfig);
+            // let video_mode = monitor.video_modes().next().unwrap();
+            // let size = video_mode.size();
 
-        let window_attributes = 
-            Window::default_attributes()
-            .with_title("Glissando")
-            .with_min_inner_size(size).with_max_inner_size(size) // genius idea!
-            .with_inner_size(size).with_resizable(false).with_decorations(false);
-        let window = Arc::new(event_loop.create_window(window_attributes).unwrap());
+            let size = monitor.size();
 
-        let wgpu_app = pollster::block_on(WgpuApp::new(window.clone(), appconfig));
-        let mut app = self.app.lock().unwrap();
-        *app = Some(wgpu_app);
-        window.request_redraw();
+            println!("monitor name: {}", monitor.name().unwrap());
+
+            print!("size: {:?}\n", size);
+
+            // println!("appconfig: {:#?}\n", appconfig);
+
+            let window_attributes = 
+                Window::default_attributes()
+                .with_title("Glissando")
+                .with_min_inner_size(size).with_max_inner_size(size) // genius idea!
+                .with_inner_size(size).with_resizable(false).with_decorations(false);
+            let window = Arc::new(event_loop.create_window(window_attributes).unwrap());
+
+            window.set_fullscreen(Some(winit::window::Fullscreen::Borderless(Some(monitor))));
+            window.set_visible(true);
+
+            let wgpu_app = pollster::block_on(WgpuApp::new(window.clone(), appconfig));
+            let mut app = self.app.lock().unwrap();
+            *app = Some(wgpu_app);
+            window.request_redraw();
 
 
-        // screen::screen_shot().unwrap();
-        // self.app.lock().unwrap().replace(wgpu_app);
+            // screen::screen_shot().unwrap();
+            // self.app.lock().unwrap().replace(wgpu_app);
+        }
+
     }
 
     fn suspended(&mut self, _event_loop: &ActiveEventLoop) {
@@ -93,13 +117,13 @@ impl ApplicationHandler for WgpuAppHandler {
                     Err(e) => eprintln!("{e:?}"),
                 }
 
-                if let Some(yuv_data) = pollster::block_on(app.capture_yuv_frame()) {
-                    // 如果 streamer 已經初始化，就推出去
-                    if let Some(ref streamer) = app.streamer {
-                        // println!("Pushing frame, size: {}", yuv_data.len());
-                        let _ = streamer.push_frame(yuv_data);
-                    }
-                }
+                // if let Some(yuv_data) = pollster::block_on(app.capture_yuv_frame()) {
+                //     // 如果 streamer 已經初始化，就推出去
+                //     if let Some(ref streamer) = app.streamer {
+                //         // println!("Pushing frame, size: {}", yuv_data.len());
+                //         let _ = streamer.push_frame(yuv_data);
+                //     }
+                // }
 
                 // 除非我们手动请求，RedrawRequested 将只会触发一次。
                 app.update();

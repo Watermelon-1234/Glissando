@@ -17,6 +17,7 @@ pub struct AppConfig {
 pub struct SystemArgs {
     pub adapter_name: String,
     pub present_mode: PresentMode,
+    pub display_monitor: String,
 }
 
 impl Default for SystemArgs {
@@ -24,6 +25,7 @@ impl Default for SystemArgs {
         SystemArgs { 
             adapter_name: String::from("None"), 
             present_mode: PresentMode::Fifo,
+            display_monitor: String::from("Virtual"),
         }
     }
 }
@@ -150,6 +152,7 @@ impl AppConfig {
 pub fn load() -> AppConfig {
     let path = Path::new("settings.toml");
     let toml = fs::read_to_string(path).unwrap();
-    println!("toml: {}", toml);
+    // println!("toml: {}", toml);
+    println!("config Loaded");
     toml::from_str(&toml).unwrap_or_default()
 }

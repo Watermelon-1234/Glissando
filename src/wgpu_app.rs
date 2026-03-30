@@ -63,14 +63,14 @@ pub struct WgpuApp {
     pub distorted_texture: wgpu::Texture,
     pub distorted_texture_view: wgpu::TextureView,
 
-    pub yuv_data_size: u64,
-    pub yuv_shader: wgpu::ShaderModule,
-    pub yuv_compute_pipeline: wgpu::ComputePipeline,
-    pub yuv_bind_group: wgpu::BindGroup,
-    pub yuv_output_staging_buffer: wgpu::Buffer,     
-    pub yuv_storage_buffer: wgpu::Buffer,
+    // pub yuv_data_size: u64,
+    // pub yuv_shader: wgpu::ShaderModule,
+    // pub yuv_compute_pipeline: wgpu::ComputePipeline,
+    // pub yuv_bind_group: wgpu::BindGroup,
+    // pub yuv_output_staging_buffer: wgpu::Buffer,     
+    // pub yuv_storage_buffer: wgpu::Buffer,
 
-    pub streamer: Option<GStreamer>,
+    // pub streamer: Option<GStreamer>,
 
     /// 避免窗口被释放
     #[allow(unused)]
@@ -384,97 +384,97 @@ impl WgpuApp {
 
         // let u32_size = std::mem::size_of::<u32>() as u32;
         // let bytes_per_row = (size.width * u32_size + 255) & !255; // 對齊 256 bytes
-        let yuv_data_size = (size.width * size.height * 3 / 2) as u64;
+        // let yuv_data_size = (size.width * size.height * 3 / 2) as u64;
 
-        let yuv_storage_buffer = device.create_buffer(
-            &wgpu::BufferDescriptor{
-                label: Some("YUV Storage Buffer"),
-                size: yuv_data_size,
-                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC, // 注意 COPY_SRC
-                mapped_at_creation: false,
-            }
-        );
+        // let yuv_storage_buffer = device.create_buffer(
+        //     &wgpu::BufferDescriptor{
+        //         label: Some("YUV Storage Buffer"),
+        //         size: yuv_data_size,
+        //         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC, // 注意 COPY_SRC
+        //         mapped_at_creation: false,
+        //     }
+        // );
 
-        let yuv_output_staging_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("YUV Output Staging Buffer"),
-            size: yuv_data_size,
-            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
+        // let yuv_output_staging_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        //     label: Some("YUV Output Staging Buffer"),
+        //     size: yuv_data_size,
+        //     usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+        //     mapped_at_creation: false,
+        // });
 
         // print!("test_only main() render_pipeline\n");
 
-        let yuv_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("YUV Compute Shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("yuv_convert.wgsl").into()), // 這是你寫好的 shader
-        });
+        // let yuv_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        //     label: Some("YUV Compute Shader"),
+        //     source: wgpu::ShaderSource::Wgsl(include_str!("yuv_convert.wgsl").into()), // 這是你寫好的 shader
+        // });
 
-        let yuv_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("YUV Bind Group Layout"),
-            entries: &[
-                // Binding 0: 輸入的原始貼圖 (剛畫好的 SBS 畫面)
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                // Binding 1: 輸出的 Storage Buffer (放 YUV 數據)
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: false },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-            ],
-        });
+        // let yuv_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        //     label: Some("YUV Bind Group Layout"),
+        //     entries: &[
+        //         // Binding 0: 輸入的原始貼圖 (剛畫好的 SBS 畫面)
+        //         wgpu::BindGroupLayoutEntry {
+        //             binding: 0,
+        //             visibility: wgpu::ShaderStages::COMPUTE,
+        //             ty: wgpu::BindingType::Texture {
+        //                 sample_type: wgpu::TextureSampleType::Float { filterable: true },
+        //                 view_dimension: wgpu::TextureViewDimension::D2,
+        //                 multisampled: false,
+        //             },
+        //             count: None,
+        //         },
+        //         // Binding 1: 輸出的 Storage Buffer (放 YUV 數據)
+        //         wgpu::BindGroupLayoutEntry {
+        //             binding: 1,
+        //             visibility: wgpu::ShaderStages::COMPUTE,
+        //             ty: wgpu::BindingType::Buffer {
+        //                 ty: wgpu::BufferBindingType::Storage { read_only: false },
+        //                 has_dynamic_offset: false,
+        //                 min_binding_size: None,
+        //             },
+        //             count: None,
+        //         },
+        //     ],
+        // });
 
-        let yuv_bind_group = device.create_bind_group(
-            &wgpu::BindGroupDescriptor {
-                layout: &yuv_bind_group_layout,
-                label: Some("YUV Bind Group"),
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&distorted_texture_view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: yuv_storage_buffer.as_entire_binding(),
-                    },
-                ]
-            }
-        );
+        // let yuv_bind_group = device.create_bind_group(
+        //     &wgpu::BindGroupDescriptor {
+        //         layout: &yuv_bind_group_layout,
+        //         label: Some("YUV Bind Group"),
+        //         entries: &[
+        //             wgpu::BindGroupEntry {
+        //                 binding: 0,
+        //                 resource: wgpu::BindingResource::TextureView(&distorted_texture_view),
+        //             },
+        //             wgpu::BindGroupEntry {
+        //                 binding: 1,
+        //                 resource: yuv_storage_buffer.as_entire_binding(),
+        //             },
+        //         ]
+        //     }
+        // );
 
-        let yuv_compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("YUV Compute Pipeline"),
-            layout: Some(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("YUV Layout"),
-                bind_group_layouts: &[&yuv_bind_group_layout],
-                immediate_size: 0,
-            })),
-            module: &yuv_shader,
-            entry_point: Some("main"), // 對應你 wgsl 裡的 @compute fn main
-            compilation_options: Default::default(),
-            cache: None,
-        });
+        // let yuv_compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        //     label: Some("YUV Compute Pipeline"),
+        //     layout: Some(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        //         label: Some("YUV Layout"),
+        //         bind_group_layouts: &[&yuv_bind_group_layout],
+        //         immediate_size: 0,
+        //     })),
+        //     module: &yuv_shader,
+        //     entry_point: Some("main"), // 對應你 wgsl 裡的 @compute fn main
+        //     compilation_options: Default::default(),
+        //     cache: None,
+        // });
 
-        let streamer:Option<GStreamer> = match GStreamer::new(&app_config.network.device_ip, app_config.network.video_server_port, size.width, size.height)
-        {
-            Ok(streamer) => Some(streamer),
-            Err(e) => {
-                println!("Failed to create GStreamer: {}", e);
-                None
-            }
-        };
+        // let streamer:Option<GStreamer> = match GStreamer::new(&app_config.network.device_ip, app_config.network.video_server_port, size.width, size.height)
+        // {
+        //     Ok(streamer) => Some(streamer),
+        //     Err(e) => {
+        //         println!("Failed to create GStreamer: {}", e);
+        //         None
+        //     }
+        // };
 
 
         Self {
@@ -501,14 +501,14 @@ impl WgpuApp {
             is_capturing,
             current_frame: frame,
 
-            yuv_data_size,
-            yuv_storage_buffer,
-            yuv_output_staging_buffer,
-            yuv_shader,
-            yuv_bind_group,
-            yuv_compute_pipeline,
+            // yuv_data_size,
+            // yuv_storage_buffer,
+            // yuv_output_staging_buffer,
+            // yuv_shader,
+            // yuv_bind_group,
+            // yuv_compute_pipeline,
 
-            streamer,
+            // streamer,
         }
         
     }
@@ -602,20 +602,20 @@ impl WgpuApp {
                 self.distorted_texture_view = self.distorted_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
                 // --- 新增：重建 YUV Bind Group，綁定新的中介紋理 ---
-                self.yuv_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                    layout: &self.yuv_compute_pipeline.get_bind_group_layout(0),
-                    label: Some("YUV Bind Group"),
-                    entries: &[
-                        wgpu::BindGroupEntry {
-                            binding: 0,
-                            resource: wgpu::BindingResource::TextureView(&self.distorted_texture_view),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 1,
-                            resource: self.yuv_storage_buffer.as_entire_binding(),
-                        },
-                    ]
-                });
+                // self.yuv_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                //     layout: &self.yuv_compute_pipeline.get_bind_group_layout(0),
+                //     label: Some("YUV Bind Group"),
+                //     entries: &[
+                //         wgpu::BindGroupEntry {
+                //             binding: 0,
+                //             resource: wgpu::BindingResource::TextureView(&self.distorted_texture_view),
+                //         },
+                //         wgpu::BindGroupEntry {
+                //             binding: 1,
+                //             resource: self.yuv_storage_buffer.as_entire_binding(),
+                //         },
+                //     ]
+                // });
             }
 
             let size = self.size;
@@ -694,27 +694,27 @@ impl WgpuApp {
         }
 
         // convert pass (BGRA -> YUV) with shader:yuv_convert.wgsl
-        {
-            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("YUV Conversion Pass"),
-                ..Default::default()
-            });
-            compute_pass.set_pipeline(&self.yuv_compute_pipeline); // 你新建立的 pipeline
-            compute_pass.set_bind_group(0, &self.yuv_bind_group, &[]);
+        // {
+        //     let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+        //         label: Some("YUV Conversion Pass"),
+        //         ..Default::default()
+        //     });
+        //     compute_pass.set_pipeline(&self.yuv_compute_pipeline); // 你新建立的 pipeline
+        //     compute_pass.set_bind_group(0, &self.yuv_bind_group, &[]);
             
-            // 根據畫面大小決定工作群組數量 (假設 8x8)
-            // let workgroup_x = (self.config.width + 7) / 8;
-            // let workgroup_y = (self.config.height + 7) / 8;
-            // compute_pass.dispatch_workgroups(workgroup_x, workgroup_y, 1);
-            // id.y 處理高度的 1.5 倍
-            compute_pass.dispatch_workgroups((self.size.width + 63) / 64, (self.size.height * 3 / 2 + 15) / 16, 1);
-        }
+        //     // 根據畫面大小決定工作群組數量 (假設 8x8)
+        //     // let workgroup_x = (self.config.width + 7) / 8;
+        //     // let workgroup_y = (self.config.height + 7) / 8;
+        //     // compute_pass.dispatch_workgroups(workgroup_x, workgroup_y, 1);
+        //     // id.y 處理高度的 1.5 倍
+        //     compute_pass.dispatch_workgroups((self.size.width + 63) / 64, (self.size.height * 3 / 2 + 15) / 16, 1);
+        // }
 
-        encoder.copy_buffer_to_buffer(
-            &self.yuv_storage_buffer, 0,
-            &self.yuv_output_staging_buffer, 0,
-            self.yuv_data_size
-        );
+        // encoder.copy_buffer_to_buffer(
+        //     &self.yuv_storage_buffer, 0,
+        //     &self.yuv_output_staging_buffer, 0,
+        //     self.yuv_data_size
+        // );
 
 
         // Copy/Blit Pass: 將中介紋理的內容直接複製到視窗 Surface 上，讓肉眼可以看到
@@ -775,11 +775,11 @@ impl WgpuApp {
     }
 
     pub fn update(&mut self) {
-        if let Some(yuv_data) = pollster::block_on(self.capture_yuv_frame()) {
-            if let Some(ref streamer) = self.streamer {
-                let _ = streamer.push_frame(yuv_data);
-            }
-        } 
+        // if let Some(yuv_data) = pollster::block_on(self.capture_yuv_frame()) {
+        //     if let Some(ref streamer) = self.streamer {
+        //         let _ = streamer.push_frame(yuv_data);
+        //     }
+        // } 
         
     }
     // pub fn update_params(&mut self, offset_delta: f32, z_delta: f32) {
@@ -787,99 +787,99 @@ impl WgpuApp {
     // }
 
     // 這是最詳盡的讀取流程
-    pub async fn frame_from_buffer(&self) -> Option<Vec<u8>> {
-        let u32_size = std::mem::size_of::<u32>() as u32;
-        let bytes_per_row = (self.config.width * u32_size + 255) & !255; 
+    // pub async fn frame_from_buffer(&self) -> Option<Vec<u8>> {
+    //     let u32_size = std::mem::size_of::<u32>() as u32;
+    //     let bytes_per_row = (self.config.width * u32_size + 255) & !255; 
 
-        // 1. 建立一個 slice 指向 buffer
-        let buffer_slice = self.yuv_output_staging_buffer.slice(..);
+    //     // 1. 建立一個 slice 指向 buffer
+    //     let buffer_slice = self.yuv_output_staging_buffer.slice(..);
 
-        // 2. 請求映射（Map）該緩衝區以便讀取
-        // 使用 Oneshot Channel 來等待非同步結果
-        let (tx, rx) = futures::channel::oneshot::channel();
-        buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
-            tx.send(result).unwrap();
-        });
+    //     // 2. 請求映射（Map）該緩衝區以便讀取
+    //     // 使用 Oneshot Channel 來等待非同步結果
+    //     let (tx, rx) = futures::channel::oneshot::channel();
+    //     buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
+    //         tx.send(result).unwrap();
+    //     });
 
-        // 3. 輪詢設備直到映射完成
-        // 這是最重要的一步，沒有 poll，GPU 就不會執行地圖映射的指令
-        match self.device.poll(wgpu::PollType::Wait { // wgpu::Maintain is renamed to wgpu::PollType in wpug v25.0.0 https://github.com/gfx-rs/wgpu/releases?q=maintain&expanded=true
-            submission_index: None,
-            timeout: None,
-        }) {
-            Ok(_) => {
-                // theorically, this should never fail
-            }
-            Err(e) => {
-                // 處理 GPU 錯誤，例如 Device Lost 或 Timeout
-                eprintln!("GPU Poll Error: {:?}", e);
-                return None;
-            }
-        }
+    //     // 3. 輪詢設備直到映射完成
+    //     // 這是最重要的一步，沒有 poll，GPU 就不會執行地圖映射的指令
+    //     match self.device.poll(wgpu::PollType::Wait { // wgpu::Maintain is renamed to wgpu::PollType in wpug v25.0.0 https://github.com/gfx-rs/wgpu/releases?q=maintain&expanded=true
+    //         submission_index: None,
+    //         timeout: None,
+    //     }) {
+    //         Ok(_) => {
+    //             // theorically, this should never fail
+    //         }
+    //         Err(e) => {
+    //             // 處理 GPU 錯誤，例如 Device Lost 或 Timeout
+    //             eprintln!("GPU Poll Error: {:?}", e);
+    //             return None;
+    //         }
+    //     }
 
-        if let Ok(Ok(_)) = rx.await {
-            // 4. 取得映射後的數據範圍
-            let data = buffer_slice.get_mapped_range();
+    //     if let Ok(Ok(_)) = rx.await {
+    //         // 4. 取得映射後的數據範圍
+    //         let data = buffer_slice.get_mapped_range();
             
-            // 5. 處理對齊（Padding）問題
-            // GPU 的 bytes_per_row 往往大於畫面的寬度 * 4，必須剔除多餘的空白
-            let mut result = Vec::with_capacity((self.config.width * self.config.height * 4) as usize);
-            for chunk in data.chunks(bytes_per_row as usize) {
-                result.extend_from_slice(&chunk[.. (self.config.width * 4) as usize]);
-            }
+    //         // 5. 處理對齊（Padding）問題
+    //         // GPU 的 bytes_per_row 往往大於畫面的寬度 * 4，必須剔除多餘的空白
+    //         let mut result = Vec::with_capacity((self.config.width * self.config.height * 4) as usize);
+    //         for chunk in data.chunks(bytes_per_row as usize) {
+    //             result.extend_from_slice(&chunk[.. (self.config.width * 4) as usize]);
+    //         }
 
-            // 6. 必須手動解除映射，否則下一影格 GPU 無法寫入
-            drop(data);
-            self.yuv_output_staging_buffer.unmap();
+    //         // 6. 必須手動解除映射，否則下一影格 GPU 無法寫入
+    //         drop(data);
+    //         self.yuv_output_staging_buffer.unmap();
             
-            Some(result) // 這回傳的是 BGRA 格式的原始數據
-        } else {
-            None
-        }
-    }
+    //         Some(result) // 這回傳的是 BGRA 格式的原始數據
+    //     } else {
+    //         None
+    //     }
+    // }
 
-    pub async fn capture_yuv_frame(&self) -> Option<Vec<u8>> {
-        // 1. 定義 buffer slice
-        let buffer_slice = self.yuv_output_staging_buffer.slice(..);
+    // pub async fn capture_yuv_frame(&self) -> Option<Vec<u8>> {
+    //     // 1. 定義 buffer slice
+    //     let buffer_slice = self.yuv_output_staging_buffer.slice(..);
         
-        // 2. 請求映射（Map）該緩衝區以便讀取
-        // 使用 Oneshot Channel 來等待非同步結果
-        let (tx, rx) = futures::channel::oneshot::channel();
-        buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
-            tx.send(result).unwrap();
-        });
+    //     // 2. 請求映射（Map）該緩衝區以便讀取
+    //     // 使用 Oneshot Channel 來等待非同步結果
+    //     let (tx, rx) = futures::channel::oneshot::channel();
+    //     buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
+    //         tx.send(result).unwrap();
+    //     });
 
-        // 3. 輪詢 GPU 執行指令
-        match self.device.poll(wgpu::PollType::Wait { // wgpu::Maintain is renamed to wgpu::PollType in wpug v25.0.0 https://github.com/gfx-rs/wgpu/releases?q=maintain&expanded=true
-            submission_index: None,
-            timeout: None,
-        }) {
-            Ok(_) => {
-                // theorically, this should never fail
-            }
-            Err(e) => {
-                // 處理 GPU 錯誤，例如 Device Lost 或 Timeout
-                eprintln!("GPU Poll Error: {:?}", e);
-                return None;
-            }
-        }
+    //     // 3. 輪詢 GPU 執行指令
+    //     match self.device.poll(wgpu::PollType::Wait { // wgpu::Maintain is renamed to wgpu::PollType in wpug v25.0.0 https://github.com/gfx-rs/wgpu/releases?q=maintain&expanded=true
+    //         submission_index: None,
+    //         timeout: None,
+    //     }) {
+    //         Ok(_) => {
+    //             // theorically, this should never fail
+    //         }
+    //         Err(e) => {
+    //             // 處理 GPU 錯誤，例如 Device Lost 或 Timeout
+    //             eprintln!("GPU Poll Error: {:?}", e);
+    //             return None;
+    //         }
+    //     }
 
-        // 4. 等待映射結果
-        if let Ok(Ok(_)) = rx.await {
-            let data = buffer_slice.get_mapped_range();
+    //     // 4. 等待映射結果
+    //     if let Ok(Ok(_)) = rx.await {
+    //         let data = buffer_slice.get_mapped_range();
             
-            // 這裡的大小應該剛好是 width * height * 1.5
-            // 因為我們在 WGSL 裡是用 u32 打包的，所以長度會剛好對齊
-            let result = data.to_vec();
+    //         // 這裡的大小應該剛好是 width * height * 1.5
+    //         // 因為我們在 WGSL 裡是用 u32 打包的，所以長度會剛好對齊
+    //         let result = data.to_vec();
             
-            // 記得釋放映射，否則下一幀 GPU 無法寫入
-            drop(data);
-            self.yuv_output_staging_buffer.unmap();
+    //         // 記得釋放映射，否則下一幀 GPU 無法寫入
+    //         drop(data);
+    //         self.yuv_output_staging_buffer.unmap();
             
-            Some(result)
-        } else {
-            None
-        }
-    }
+    //         Some(result)
+    //     } else {
+    //         None
+    //     }
+    // }
 }
 

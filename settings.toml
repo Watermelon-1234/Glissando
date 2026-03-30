@@ -1,6 +1,7 @@
 # system arguments
 adapter_name = "None" # need to be set at the initialization
 present_mode = "Fifo" # AutoVsync, AutoNoVsync, Fifo, FifoRelaxed, Immediate,
+display_monitor = "#40209"
 
 # window arguments
 

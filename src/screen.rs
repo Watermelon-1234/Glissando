@@ -9,7 +9,7 @@ use crate::config::{AppConfig, CaptureArgs};
 
 pub fn init_capture(app_config: Option<AppConfig>) -> anyhow::Result<Capturer> {
     let app_config = app_config.unwrap_or(AppConfig { capture: CaptureArgs { fps: 60, ..Default::default()}, ..Default::default() });
-    println!("app_config: {:#?}\n", app_config);
+    // println!("app_config: {:#?}\n", app_config);
     // print!("test_only init_capture() start\n");
     if !scap::is_supported() 
     {
@@ -70,7 +70,7 @@ pub fn init_capture(app_config: Option<AppConfig>) -> anyhow::Result<Capturer> {
         show_highlight: true,
         excluded_targets: excluded_target.map(|t| vec![t]),
         output_type: scap::frame::FrameType::BGRAFrame,
-        output_resolution: scap::capturer::Resolution::_1080p,//app_config.capture.resolution, // _1080p,// temporary
+        output_resolution: scap::capturer::Resolution::_4320p, //Captured, // _2160p,//app_config.capture.resolution, // _1080p,// temporary
         ..Default::default()
     };
     // print!("test_only init_capture() options: {:?}\n", options);
