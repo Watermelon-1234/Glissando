@@ -5,9 +5,11 @@ use winit::{
     event::*,
     window::{Window, WindowId},
     event_loop::{ActiveEventLoop},
+    keyboard::Key,
 };
 
-use crate::{screen, wgpu_app::WgpuApp, config};
+
+use crate::{wgpu_app::WgpuApp, config, osc_server};
 
 #[derive(Default)]
 pub struct WgpuAppHandler {
@@ -22,6 +24,7 @@ impl ApplicationHandler for WgpuAppHandler {
         }
 
         let appconfig = config::load();
+        println!("appconfig: {:#?}\n", appconfig);
 
         // let monitor = ActiveEventLoop::primary_monitor(event_loop).unwrap();
         // let scale_factor = monitor.scale_factor();
@@ -30,7 +33,7 @@ impl ApplicationHandler for WgpuAppHandler {
         let target_monitor = event_loop.available_monitors().find(|m| {
             println!("monitor name: {}\n monitor scale: {} = {}x{}", m.name().unwrap(), m.scale_factor(), m.size().width,m.size().height);
             // m.name().map(|n| n.contains(&appconfig.system.display_monitor)).unwrap_or(false)
-            m.size().width == 5120 && m.size().height == 2880
+            m.size().width == 3840 && m.size().height == 2160
             // false
         }).or_else(|| {
             println!("cannot find monitor");
@@ -60,12 +63,25 @@ impl ApplicationHandler for WgpuAppHandler {
 
             window.set_fullscreen(Some(winit::window::Fullscreen::Borderless(Some(monitor))));
             window.set_visible(true);
-
-            let wgpu_app = pollster::block_on(WgpuApp::new(window.clone(), appconfig));
+            let wgpu_app = pollster::block_on(WgpuApp::new(window.clone(), appconfig.clone()));
             let mut app = self.app.lock().unwrap();
             *app = Some(wgpu_app);
-            window.request_redraw();
 
+            // todo!("correspond vr params");
+            // osc_server::start_osc_server(appconfig.network.osc_server_port, appconfig, self.app.clone().lock().unwrap().as_ref().unwrap().vr_params.clone()); //params, appconfig.network.osc_server_port);
+            if let Some(ref mut app) = *app {//*self.app.lock().unwrap() { // 會造成二次 lock :卡死
+                let port = appconfig.network.osc_server_port;
+                let params = Arc::clone(&app.vr_params); 
+                println!("port: {}",port);
+                osc_server::start_osc_server(port, appconfig, params);
+            }
+            else {
+                // panic!("app is none");
+                println!("app is none");
+            }
+
+            println!("window request redraw");
+            window.request_redraw();
 
             // screen::screen_shot().unwrap();
             // self.app.lock().unwrap().replace(wgpu_app);
@@ -101,8 +117,22 @@ impl ApplicationHandler for WgpuAppHandler {
                     
             //     }
             // }
-            WindowEvent::KeyboardInput { .. } => {
+            WindowEvent::KeyboardInput {event, .. } => {
                 // 键盘事件
+                if event.state == ElementState::Pressed && event.logical_key == Key::Character("r".into()) {
+                    println!("Key r pressed");
+                    // if let Some(ref mut app) = *self.app.lock().unwrap() {
+                    //     osc_server::adjust_center(app.vr_params.clone());
+                    //     println!("Orientation Calibrated!");
+                    // }// already locked at binding
+                    println!("{:?}",osc_server::adjust_center(app.vr_params.clone()));
+                }
+                else if event.state ==  ElementState::Pressed && event.logical_key == Key::Character("q".into()) {
+                    println!("Key q pressed");
+                    
+                    println!("quit");
+                    event_loop.exit();
+                }
             }
             WindowEvent::RedrawRequested => {
                 // surface重绘事件

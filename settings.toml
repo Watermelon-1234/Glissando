@@ -1,4 +1,5 @@
 # system arguments
+[system]
 adapter_name = "None" # need to be set at the initialization
 present_mode = "Fifo" # AutoVsync, AutoNoVsync, Fifo, FifoRelaxed, Immediate,
 display_monitor = "#40209"
@@ -7,18 +8,22 @@ display_monitor = "#40209"
 
 
 # capture arguments
+[capture]
 display_name = "None" # need to be set at the initialization
 fps = 60
 resolution = "_480p" # _480p,_720p,_1080p,_1440p,_2160p,_4320p,default // bug
 
 # vr render arguments
+[vr_render]
 use_defalt_vr_params = true
 offset = 0.032      # 瞳距偏移 (IPD)
 z_distance = 1.0    # 螢幕虛擬距離 (越小越近/越大)
 k1 = 0.21           # 桶狀畸變係數 1
 k2 = 0.12           # 桶狀畸變係數 2
+sensitivity = 0.5       # 頭不追蹤敏感度
 
 # debug
+[debug] # todo
 enable_debug = false
 debug_level = "info"
 log_file_path = "glissando.log"
@@ -27,5 +32,8 @@ log_file_path = "glissando.log"
 key_quit = "q"
 
 # Network settings
-device_ip = "192.168.0.148"
-video_server_port = 5000
+[network]
+# device_ip = "192.168.0.148"
+# video_server_port = 5000
+osc_server_port = 9527
+device_uuid = "your-phone-uuid"

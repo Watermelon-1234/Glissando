@@ -13,7 +13,7 @@ use wgpu_app_handler::WgpuAppHandler;
 mod wgpu_app;
 mod screen;
 mod config;
-mod video;
+mod osc_server; 
 
 use env_logger;
 

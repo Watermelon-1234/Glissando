@@ -57,6 +57,7 @@ pub struct VrRenderArgs {
     pub z_distance: f32,
     pub k1: f32,
     pub k2: f32,
+    pub sensitivity: f32,
 }
 
 impl Default for VrRenderArgs {
@@ -66,6 +67,7 @@ impl Default for VrRenderArgs {
             z_distance: 1.0,
             k1: 0.21,
             k2: 0.12,
+            sensitivity: 0.5,
         }
     }
 }
@@ -89,15 +91,19 @@ impl Default for DebugArgs {
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct NetworkArgs {
-    pub video_server_port: u16,
-    pub device_ip: String,
+    // pub video_server_port: u16,
+    // pub device_ip: String,
+    pub osc_server_port: u16,
+    pub device_uuid: String,
 }
 
 impl Default for NetworkArgs {
     fn default() -> Self {
         NetworkArgs { 
-            video_server_port: 5000,
-            device_ip: String::from("127.0.0.1"),
+            // video_server_port: 5000,
+            // device_ip: String::from("127.0.0.1"),
+            osc_server_port: 9527,
+            device_uuid: String::from(""),
         }
     }
 }
@@ -152,7 +158,8 @@ impl AppConfig {
 pub fn load() -> AppConfig {
     let path = Path::new("settings.toml");
     let toml = fs::read_to_string(path).unwrap();
-    // println!("toml: {}", toml);
+    println!("toml: {}", toml);
     println!("config Loaded");
-    toml::from_str(&toml).unwrap_or_default()
+    toml::from_str(&toml).unwrap_or_default() // toml need [class] for classification
+    // toml::from_str(&toml).unwrap()
 }

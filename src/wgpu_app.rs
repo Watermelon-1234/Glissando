@@ -1,5 +1,6 @@
 use core::panic;
-use std::sync::Arc;
+use std::sync::{Arc,Mutex};
+
 
 use winit::dpi::LogicalSize;
 // use scap::capturer;
@@ -16,16 +17,33 @@ use bytemuck;
 // configuration
 use crate::config::AppConfig;
 
-use crate::video::GStreamer;
+use serde::{Deserialize, Serialize};
+
 
 // for vr
 #[repr(C)]
-#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Deserialize, Serialize)]
 pub struct VRParams {
     pub offset: f32,     // 瞳距偏移
     pub z_distance: f32, // 畫面距離
     pub k1: f32,         // 畸變係數1
     pub k2: f32,         // 畸變係數2
+
+    pub sensitivity: f32,
+    pub _padding1: [f32; 3],        // 保持 16 字節對齊 (WGPU Uniform 最佳實踐)
+
+    // pub base_yaw: f32,
+    // pub base_pitch: f32,
+    // pub base_roll: f32,
+
+    // pub yaw: f32,      // 頭部追蹤水平位移
+    // pub pitch: f32,      // 頭部追蹤垂直位移
+    // pub roll: f32,      // 頭部追蹤旋轉
+    pub q_base: [f32; 4],    // 校正時的基準姿態
+    pub q_current: [f32; 4], // 當前手機姿態
+    #[serde(skip)]
+    pub q_smooth: [f32; 4],  // 這是實際傳給 Shader 的「平滑後」數據
+
 }
 
 impl Default for VRParams {
@@ -35,11 +53,29 @@ impl Default for VRParams {
             z_distance: 0.8,
             k1: 0.21,
             k2: 0.12,
+
+            sensitivity: 0.5,
+            _padding1: [0.0; 3],
+
+            // base_yaw: 0.0,
+            // base_pitch: 0.0,
+            // base_roll: 0.0,
+
+            // yaw: 0.0,
+            // pitch: 0.0,
+            // roll: 0.0,
+
+            q_base: [0.0, 0.0, 0.0, 1.0],
+            q_current: [0.0, 0.0, 0.0, 1.0],
+            q_smooth: [0.0, 0.0, 0.0, 1.0],
+
         }
     }
 }
 
 pub struct WgpuApp {
+    pub last_time: std::time::Instant,
+    
     pub app_config: AppConfig,
 
     surface: wgpu::Surface<'static>,
@@ -51,7 +87,7 @@ pub struct WgpuApp {
     screen_texture: wgpu::Texture,
     screen_texture_view: wgpu::TextureView,
     render_pipeline: wgpu::RenderPipeline,
-    vr_params: VRParams,
+    pub vr_params: Arc<Mutex<VRParams>>, // since osc server neads to access it
     vr_buffer: wgpu::Buffer,
     sampler: wgpu::Sampler,
 
@@ -80,7 +116,11 @@ pub struct WgpuApp {
 
 impl WgpuApp {
     pub async fn new(window: Arc<Window>, app_config: AppConfig) -> Self {
-
+        println!("test_only main() new");
+        
+        // for calculate fps
+        let last_time = std::time::Instant::now();
+        
         // capturer
         let mut capturer = screen::init_capture(Some(app_config.clone())).unwrap_or_else(|e| panic!("error: {}", e));
         // // print!("test_only main() init_capture\n");
@@ -92,6 +132,10 @@ impl WgpuApp {
         //         display_time: 0,
         //     }
         // );  
+
+        println!("fuck");
+
+
         capturer.start_capture();
         // // print!("test_only main() start_capture\n");
         let is_capturing = true;
@@ -104,6 +148,9 @@ impl WgpuApp {
                 display_time: 0,
             }
         ));
+        
+
+        println!("fuck");
 
         let (mut size, frame) = match frame
         {
@@ -135,6 +182,8 @@ impl WgpuApp {
         }
         // capturer.stop_capture();
         // // // print!("test_only main() stop_capture\n");        
+
+        println!("fuck");
 
 
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
@@ -237,19 +286,22 @@ impl WgpuApp {
             ..Default::default()
         });
 
-        let vr_params = VRParams{
+        let vr_params: Arc<Mutex<VRParams>> = Arc::new(Mutex::new(VRParams{
             offset: app_config.vr_render.offset,
             z_distance: app_config.vr_render.z_distance,
             k1: app_config.vr_render.k1,
             k2: app_config.vr_render.k2,
-        };
+            ..Default::default()
+        }));
 
         // 2. 建立 GPU Buffer
         let vr_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("VR Params Buffer"),
-            contents: bytemuck::cast_slice(&[vr_params]),
+            contents: bytemuck::cast_slice(&[vr_params.lock().unwrap().clone()]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
+
+        println!("fuck");
 
         let texture_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -478,6 +530,7 @@ impl WgpuApp {
 
 
         Self {
+            last_time,
             app_config,
             surface,
             device,
@@ -542,6 +595,12 @@ impl WgpuApp {
 
     */
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+        let now = std::time::Instant::now();
+        let fps = 1.0 / now.duration_since(self.last_time).as_secs_f32();
+        print!("\r"); 
+        print!("\x1b[H\x1b[2KRendering FPS: {:.2}",fps); 
+        self.last_time = now;
+
         // self.resize_surface_if_needed();
         // print!("test_only render() start\n");
         if self.is_capturing {
@@ -780,7 +839,31 @@ impl WgpuApp {
         //         let _ = streamer.push_frame(yuv_data);
         //     }
         // } 
-        
+        let mut p = {
+            let p = self.vr_params.lock().unwrap();
+            *p // 解引用複製一份出來
+        };
+
+        // 平滑因子 (Alpha)：0.0 ~ 1.0
+        // 越小越平滑但延遲感越高，0.1~0.3 是不錯的平衡點
+        let alpha = 0.15; 
+
+        // 對四元數的四個分量分別做插值 (簡易 Lerp + Normalize)
+        let mut sum_sq = 0.0;
+        for i in 0..4 {
+            // q_smooth = q_smooth * (1-a) + q_current * a
+            p.q_smooth[i] = p.q_smooth[i] * (1.0 - alpha) + p.q_current[i] * alpha;
+            sum_sq += p.q_smooth[i] * p.q_smooth[i];
+        }
+
+        // 重新歸一化，防止四元數失效
+        let magnitude = sum_sq.sqrt();
+        if magnitude > 0.0 {
+            for i in 0..4 {
+                p.q_smooth[i] /= magnitude;
+            }
+        }
+        self.queue.write_buffer(&self.vr_buffer, 0, bytemuck::cast_slice(&[p]));
     }
     // pub fn update_params(&mut self, offset_delta: f32, z_delta: f32) {
     //     todo!();    
@@ -789,7 +872,7 @@ impl WgpuApp {
     // 這是最詳盡的讀取流程
     // pub async fn frame_from_buffer(&self) -> Option<Vec<u8>> {
     //     let u32_size = std::mem::size_of::<u32>() as u32;
-    //     let bytes_per_row = (self.config.width * u32_size + 255) & !255; 
+    //     let bytes_per_row = (selfconfig.width * u32_size + 255) & !255; 
 
     //     // 1. 建立一個 slice 指向 buffer
     //     let buffer_slice = self.yuv_output_staging_buffer.slice(..);

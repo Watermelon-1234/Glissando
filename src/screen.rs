@@ -8,6 +8,7 @@ use crate::config::{AppConfig, CaptureArgs};
 
 
 pub fn init_capture(app_config: Option<AppConfig>) -> anyhow::Result<Capturer> {
+    println!("init_capture");
     let app_config = app_config.unwrap_or(AppConfig { capture: CaptureArgs { fps: 60, ..Default::default()}, ..Default::default() });
     // println!("app_config: {:#?}\n", app_config);
     // print!("test_only init_capture() start\n");
@@ -15,10 +16,12 @@ pub fn init_capture(app_config: Option<AppConfig>) -> anyhow::Result<Capturer> {
     {
         return Err(anyhow::anyhow!("scap is not supported"));
     }
+    // println!("shit");
     // print!("test_only init_capture() scap is supported\n");
     if !scap::has_permission()
     {
         log::warn!("scap has no permission, requesting permission");
+        println!("scap has no permission, requesting permission");
         if !scap::request_permission()
         {
             log::error!("scap request permission failed");

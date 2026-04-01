@@ -9,11 +9,10 @@ bytemuck = "1.25.0"
 env_logger = "0.11.9"
 features = "0.10.0"
 futures = "0.3.32"
-gstreamer = "0.25.1"
-gstreamer-app = "0.25.0"
 log = "0.4.29"
 parking_lot = "0.12.5"
 pollster = "0.4.0"
+rosc = "0.11.4"
 scap = "0.0.8"
 serde = { version = "1.0.228", features = ["derive"] }
 tokio = { version = "1.50.0", features = ["full"] }
@@ -21,6 +20,6 @@ toml = "1.0.3"
 wgpu = { version = "28.0.0", features = ["serde"] }
 winit = "0.30.12"
 
-[target.aarch64-apple-darwin]
-rustflags = ["-C", "link-arg=-Wl,-rpath,/opt/homebrew/lib"]
+# [target.aarch64-apple-darwin]
+# rustflags = ["-C", "link-arg=-Wl,-rpath,/opt/homebrew/lib"] # for access to gstream but unused now
 
