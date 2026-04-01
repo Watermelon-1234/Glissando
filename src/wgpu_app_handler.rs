@@ -16,8 +16,69 @@ pub struct WgpuAppHandler {
     app: Arc<Mutex<Option<WgpuApp>>>,
 }
 
+
+#[cfg(target_os = "macos")]
+fn prevent_app_nap() {
+    use objc::{msg_send, sel, sel_impl, runtime::Object, class};
+    use std::os::raw::c_char;
+
+    unsafe {
+        let process_info: *mut Object = msg_send![class!(NSProcessInfo), processInfo];
+        
+        // 這些是 macOS 的 Activity Options 位元遮罩
+        // NSActivityUserInitiated (0x000000FF) | NSActivityLatencyCritical (0xFF00000000)
+        let options: u64 = 0x000000FF | 0xFF00000000;
+
+        // 建立 NSString 的 C 方式：呼叫 NSString 的 stringWithUTF8String:
+        let reason_str = "VR Streaming Performance\0".as_ptr() as *const c_char;
+        let reason: *mut Object = msg_send![class!(NSString), stringWithUTF8String: reason_str];
+
+        // 呼叫 beginActivityWithOptions:reason:
+        let _: () = msg_send![process_info, beginActivityWithOptions:options reason:reason];
+        println!("macOS App Nap disabled.");
+    }
+}
+
+#[cfg(target_os = "windows")] // not tested
+fn prevent_windows_throttling() {
+    // 這裡需要 windows crate 的 Win32_System_Power feature
+    use windows::Win32::System::Power::{
+        SetThreadExecutionState, ES_CONTINUOUS, ES_DISPLAY_REQUIRED, ES_SYSTEM_REQUIRED
+    };
+    unsafe {
+        // ES_CONTINUOUS 表示持續狀態，後面兩個確保系統和螢幕不進入低功耗
+        SetThreadExecutionState(ES_CONTINUOUS | ES_DISPLAY_REQUIRED | ES_SYSTEM_REQUIRED);
+        println!("Windows power throttling disabled.");
+    }
+}
+
+#[cfg(target_os = "linux")] // not tested
+fn boost_linux_performance() {
+    unsafe {
+        // 設定 nice 值，範圍 -20 到 19，越低優先權越高
+        // 注意：設定負值通常需要 root 權限或特定的 CAP_SYS_NICE
+        libc::setpriority(libc::PRIO_PROCESS, 0, -10);
+    }
+    println!("Linux process priority boosted.");
+    use std::process::Command;
+    // 抑制省電模式
+    let _ = Command::new("xdg-screensaver")
+        .arg("suspend")
+        .spawn();
+    println!("Linux idle inhibited via xdg-screensaver.");
+}
+
 impl ApplicationHandler for WgpuAppHandler {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        #[cfg(target_os = "macos")]
+        prevent_app_nap();
+
+        #[cfg(target_os = "windows")]
+        prevent_windows_throttling();
+
+        #[cfg(target_os = "linux")]
+        boost_linux_performance();
+
         // 恢复事件
         if self.app.lock().unwrap().is_some() {
             return;
@@ -33,12 +94,15 @@ impl ApplicationHandler for WgpuAppHandler {
         let target_monitor = event_loop.available_monitors().find(|m| {
             println!("monitor name: {}\n monitor scale: {} = {}x{}", m.name().unwrap(), m.scale_factor(), m.size().width,m.size().height);
             // m.name().map(|n| n.contains(&appconfig.system.display_monitor)).unwrap_or(false)
+            // m.size().width == 1180 && m.size().height == 820
             m.size().width == 3840 && m.size().height == 2160
             // false
         }).or_else(|| {
             println!("cannot find monitor");
             event_loop.primary_monitor()
         }); // 找不到就用主螢幕
+
+        event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
 
         if let Some(monitor) = target_monitor {
             // let size  = screen::get_frame_size().unwrap();

@@ -13,19 +13,20 @@ struct VRParams {
 
 struct VertexOutput {
     @builtin(position) position: vec4f,
-    @location(0) uv: vec2f,
+    @location(0) view_dir: vec3f, // 傳遞 3D 視線向量到 Fragment
+    @location(1) is_right: f32,
 };
 
 @group(0) @binding(0) var screen_texture: texture_2d<f32>;
 @group(0) @binding(1) var screen_sampler: sampler;
 @group(0) @binding(2) var<uniform> params: VRParams;
 
-// 四元數共軛
+// --- 四元數運算工具函數 ---
+
 fn q_conjugate(q: vec4f) -> vec4f {
     return vec4f(-q.xyz, q.w);
 }
 
-// 四元數乘法 (q1 * q2)
 fn q_mul(q1: vec4f, q2: vec4f) -> vec4f {
     return vec4f(
         q1.w * q2.xyz + q2.w * q1.xyz + cross(q1.xyz, q2.xyz),
@@ -33,17 +34,10 @@ fn q_mul(q1: vec4f, q2: vec4f) -> vec4f {
     );
 }
 
-// 輔助函數：繞中心旋轉 UV (用於處理 Roll)
-fn rotate_uv(uv: vec2f, angle: f32) -> vec2f {
-    let s = sin(angle);
-    let c = cos(angle);
-    let pivot = vec2f(0.5, 0.5);
-    let temp_uv = uv - pivot;
-    let rotated = vec2f(
-        temp_uv.x * c - temp_uv.y * s,
-        temp_uv.x * s + temp_uv.y * c
-    );
-    return rotated + pivot;
+// 使用四元數旋轉 3D 向量 (Rodrigues' Rotation Formula 的優化版)
+fn rotate_vector(v: vec3f, q: vec4f) -> vec3f {
+    let t = 2.0 * cross(q.xyz, v);
+    return v + q.w * t + cross(q.xyz, t);
 }
 
 @vertex
@@ -55,60 +49,61 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
     
     let local_idx = vertex_index % 6u;
     let p = pos[local_idx];
-    let is_right = f32(vertex_index >= 6u);
+    let is_right_val = f32(vertex_index >= 6u);
 
-    // 輸出位置：SBS 佈局
-    let screen_x = (p.x * 0.5) + (is_right * 1.0 - 0.5);
+    // 1. 決定在螢幕上的位置 (SBS 佈局)
+    let screen_x = (p.x * 0.5) + (is_right_val * 1.0 - 0.5);
     let screen_y = p.y; 
-    
-    // 1. 計算相對旋轉 q_rel = q_current * inv(q_base)
-    // 注意：若方向相反，請嘗試 q_mul(q_conjugate(params.q_base), params.q_current)
-    let q = q_mul(params.q_current, q_conjugate(params.q_base));
 
-    // 2. 從四元數提取歐拉角 (對應手機橫置 Z-Y-X 順序)
-    // 根據你設定的：X=Roll, Y=Pitch, Z=Yaw
-    
-    // Yaw (繞 Z 軸)（左右看）
-    let yaw = -atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z));
-    
-    // Pitch (繞 Y 軸)(上下看)
-    let pitch = -asin(clamp(2.0 * (q.w * q.y - q.z * q.x), -1.0, 1.0));
-    
-    // Roll (繞 X 軸)（
-    let roll = atan2(2.0 * (q.w * q.x + q.y * q.z), 1.0 - 2.0 * (q.x * q.x + q.y * q.y));
+    // 2. 建立「原始視線向量」
+    // z_distance 代表焦距，數值越大視場 (FOV) 越窄
+    let parallax = (is_right_val - 0.5) * params.offset;
+    var raw_view_dir = vec3f(p.x + parallax, p.y, params.z_distance);
 
-    // 3. 計算基礎 UV 與視差
-    let zoom = max(params.z_distance, 0.001);
-    let parallax = (is_right - 0.5) * params.offset;
-    
-    var uv_x = (p.x * zoom + parallax + 1.0) / 2.0;
-    var uv_y = 1.0 - ((p.y * zoom + 1.0) / 2.0);
+    // qflipZ​=(0,0,1,0), q' = qflipZ​⋅q⋅qflipZ−1​
+    // let q_flip_z = vec4f(1, 1, 0, 0);
 
-    // 4. 套用旋轉位移
-    // 這裡的 Yaw/Pitch 前面的正負號取決於你手機傳送端的座標系定義，若方向相反請翻轉
-    uv_x = uv_x + (yaw * params.sensitivity);
-    uv_y = uv_y - (pitch * params.sensitivity);
 
-    // 5. 處理 Roll (歪頭時畫面要反向旋轉以保持地平線水平)
-    var final_uv = vec2f(uv_x, uv_y);
-    final_uv = rotate_uv(final_uv, roll); 
+    // 3. 計算相對旋轉四元數 並 取其逆旋轉 (Conjugate)
+    // q_rel = q_current * inv(q_base)
+    // 逆旋轉代表：相機轉向左邊，畫面採樣點要向右旋轉
+    let q_rel = q_mul(q_conjugate(params.q_base), params.q_current);
+    // let q_rel_fix = q_mul(q_mul(q_flip_z, q_rel), q_conjugate(q_flip_z));
+
+    // 4. 旋轉視線向量
+    let q_cam_inv = vec4f(-q_rel[0],-q_rel[1],q_rel[2],q_rel[3]);// 鏡頭旋轉是(z)反過來的
+    let rotated_dir = rotate_vector(raw_view_dir, q_cam_inv);
 
     var out: VertexOutput;
     out.position = vec4f(screen_x, screen_y, 0.0, 1.0);
-    out.uv = final_uv;
+    out.view_dir = rotated_dir;
+    out.is_right = is_right_val;
     return out;
 }
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
-    let st = in.uv * 2.0 - 1.0;
-    let r2 = st.x * st.x + st.y * st.y;
-
+    // 1. 將旋轉後的 3D 向量重新投影回 2D 平面 (透視投影)
+    // rotated_dir.z 是視線前方的深度
+    var proj_uv = vec2f(in.view_dir.x / in.view_dir.z, in.view_dir.y / in.view_dir.z);
+    
+    // 2. 轉回 [0, 1] UV 空間
+    // 注意：因原始畫面是 Y-up，UV 座標通常需要翻轉 Y
+    let st = proj_uv; // 現在是中心為 0 的座標系 [-1, 1] (視 FOV 而定)
+    
+    // 3. 桶狀畸變 (Barrel Distortion) 
+    // 在投影座標上進行，效果最精確
+    let r2 = dot(st, st);
     let distortion = 1.0 + params.k1 * r2 + params.k2 * r2 * r2;
     let distorted_st = st * distortion;
 
-    let final_uv = (distorted_st + 1.0) / 2.0;
+    // 4. 轉換為最終採樣 UV
+    let final_uv = vec2f(
+        (distorted_st.x + 1.0) / 2.0,
+        1.0 - (distorted_st.y + 1.0) / 2.0
+    );
 
+    // 邊界檢查
     if (final_uv.x < 0.0 || final_uv.x > 1.0 || final_uv.y < 0.0 || final_uv.y > 1.0) {
         return vec4f(0.0, 0.0, 0.0, 1.0);
     }

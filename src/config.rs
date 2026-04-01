@@ -18,6 +18,7 @@ pub struct SystemArgs {
     pub adapter_name: String,
     pub present_mode: PresentMode,
     pub display_monitor: String,
+    pub phone_orientation: f32,
 }
 
 impl Default for SystemArgs {
@@ -26,6 +27,7 @@ impl Default for SystemArgs {
             adapter_name: String::from("None"), 
             present_mode: PresentMode::Fifo,
             display_monitor: String::from("Virtual"),
+            phone_orientation: 90.0,
         }
     }
 }

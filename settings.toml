@@ -1,8 +1,9 @@
 # system arguments
 [system]
 adapter_name = "None" # need to be set at the initialization
-present_mode = "Fifo" # AutoVsync, AutoNoVsync, Fifo, FifoRelaxed, Immediate,
+present_mode = "Immediate" # "Fifo" # AutoVsync, AutoNoVsync, Fifo, FifoRelaxed, Immediate,
 display_monitor = "#40209"
+phone_orientation = 90 # only 90 0 -90
 
 # window arguments
 
@@ -11,7 +12,7 @@ display_monitor = "#40209"
 [capture]
 display_name = "None" # need to be set at the initialization
 fps = 60
-resolution = "_480p" # _480p,_720p,_1080p,_1440p,_2160p,_4320p,default // bug
+resolution = "_720p" # _480p,_720p,_1080p,_1440p,_2160p,_4320p,default // bug
 
 # vr render arguments
 [vr_render]

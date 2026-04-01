@@ -9,13 +9,15 @@ use std::{default::Default};
 mod wgpu_app_handler;
 use wgpu_app_handler::WgpuAppHandler;
 
+use env_logger;
+
 
 mod wgpu_app;
 mod screen;
 mod config;
 mod osc_server; 
+mod debug;
 
-use env_logger;
 
 
 fn main()-> Result<(), EventLoopError> {
@@ -29,4 +31,3 @@ fn main()-> Result<(), EventLoopError> {
     let mut app = WgpuAppHandler::default();
     events_loop.run_app(&mut app)
 }
-

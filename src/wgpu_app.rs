@@ -39,6 +39,8 @@ pub struct VRParams {
     // pub yaw: f32,      // 頭部追蹤水平位移
     // pub pitch: f32,      // 頭部追蹤垂直位移
     // pub roll: f32,      // 頭部追蹤旋轉
+
+
     pub q_base: [f32; 4],    // 校正時的基準姿態
     pub q_current: [f32; 4], // 當前手機姿態
     #[serde(skip)]
@@ -597,7 +599,7 @@ impl WgpuApp {
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
         let now = std::time::Instant::now();
         let fps = 1.0 / now.duration_since(self.last_time).as_secs_f32();
-        print!("\r"); 
+        print!("\r"); // 
         print!("\x1b[H\x1b[2KRendering FPS: {:.2}",fps); 
         self.last_time = now;
 
